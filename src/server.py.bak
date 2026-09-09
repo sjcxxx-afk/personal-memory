@@ -1,0 +1,190 @@
+import asyncio
+import sys
+from pathlib import Path
+
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+from mcp.server import Server
+from mcp.types import Tool, TextContent
+import mcp.server.stdio
+
+from .tools.store_tool import StoreTool
+from .tools.search_tool import SearchTool
+from .utils.helpers import setup_logging
+
+
+# Initialize logger
+logger = setup_logging()
+
+# Create MCP server
+app = Server("personal-memory")
+
+# Initialize tools
+store_tool = StoreTool()
+search_tool = SearchTool()
+
+
+@app.tool()
+async def store_fact(content: str, scene: str = "general", 
+                    source: str = "chat", importance: str = "medium") -> list[TextContent]:
+    """
+    Store a factual memory in the personal knowledge base.
+    
+    This tool stores facts with context including scene, source, and importance.
+    Facts are stored in both a vector database for semantic search and a 
+    relational database for metadata management.
+    
+    Args:
+        content: The factual content to store (e.g., "用户对花生过敏")
+        scene: Scene tag for categorization (work, life, health, finance, etc.)
+        source: Source of the fact (chat_2026-09-07, note, document, etc.)
+        importance: Importance level (high, medium, low)
+    
+    Returns:
+        Confirmation of storage with fact details
+    """
+    logger.info(f"Storing fact: {content[:50]}...")
+    return await store_tool.store_fact(content, scene, source, importance)
+
+
+@app.tool()
+async def search_facts(query: str, scene_filter: str = None, 
+                      limit: int = 5) -> list[TextContent]:
+    """
+    Search for facts using semantic similarity.
+    
+    This tool performs semantic search across all stored facts, returning
+    the most relevant results based on the query. Results are ranked by
+    similarity score and include full fact details.
+    
+    Args:
+        query: Search query (e.g., "过敏信息", "工作偏好", "饮食限制")
+        scene_filter: Optional scene tag to filter results (work, life, health, etc.)
+        limit: Maximum number of results to return (default: 5)
+    
+    Returns:
+        List of matching facts with similarity scores
+    """
+    logger.info(f"Searching facts: {query}")
+    return await search_tool.search_facts(query, scene_filter, limit)
+
+
+@app.tool()
+async def list_facts(scene_filter: str = None, 
+                    limit: int = 10) -> list[TextContent]:
+    """
+    List all stored facts with optional filtering.
+    
+    This tool retrieves facts from the database, optionally filtered by
+    scene tag. Results are sorted by timestamp (newest first) and include
+    metadata like access count and temperature status.
+    
+    Args:
+        scene_filter: Optional scene tag to filter by (work, life, health, etc.)
+        limit: Maximum number of facts to return (default: 10)
+    
+    Returns:
+        List of facts with metadata
+    """
+    logger.info(f"Listing facts (scene: {scene_filter}, limit: {limit})")
+    return await store_tool.list_facts(scene_filter, limit)
+
+
+@app.tool()
+async def get_fact_details(fact_id: str) -> list[TextContent]:
+    """
+    Get detailed information about a specific fact.
+    
+    This tool retrieves complete details about a fact by its ID, including
+    all metadata, access history, and temperature status.
+    
+    Args:
+        fact_id: The unique identifier of the fact
+    
+    Returns:
+        Detailed fact information
+    """
+    logger.info(f"Getting fact details: {fact_id}")
+    return await search_tool.get_fact_details(fact_id)
+
+
+@app.tool()
+async def get_memory_stats() -> list[TextContent]:
+    """
+    Get statistics about the memory service.
+    
+    This tool returns statistics about the stored facts, including
+    counts by scene, temperature distribution, and storage usage.
+    
+    Returns:
+        Memory service statistics
+    """
+    try:
+        # Get stats from stores
+        fact_stats = store_tool.fact_store.get_all_facts(limit=1000)
+        vector_stats = store_tool.vector_store.get_collection_stats()
+        
+        # Calculate statistics
+        total_facts = len(fact_stats)
+        scene_counts = {}
+        temperature_counts = {"hot": 0, "warm": 0, "cold": 0}
+        
+        for fact in fact_stats:
+            # Count by scene
+            scene_counts[fact.scene] = scene_counts.get(fact.scene, 0) + 1
+            
+            # Count by temperature
+            if fact.temperature in temperature_counts:
+                temperature_counts[fact.temperature] += 1
+        
+        # Format statistics
+        stats_lines = [
+            "📊 Memory Service Statistics:",
+            "",
+            f"📈 Total Facts: {total_facts}",
+            f"🔍 Vector DB Status: {vector_stats.get('status', 'unknown')}",
+            f"📦 Vector DB Count: {vector_stats.get('count', 0)}",
+            "",
+            "🏷️ Facts by Scene:"
+        ]
+        
+        for scene, count in sorted(scene_counts.items(), key=lambda x: x[1], reverse=True):
+            stats_lines.append(f"   • {scene}: {count}")
+        
+        stats_lines.extend([
+            "",
+            "🌡️ Temperature Distribution:"
+        ])
+        
+        for temp, count in temperature_counts.items():
+            stats_lines.append(f"   • {temp}: {count}")
+        
+        return [TextContent(
+            type="text",
+            text="\n".join(stats_lines)
+        )]
+        
+    except Exception as e:
+        return [TextContent(
+            type="text",
+            text=f"❌ Error getting memory stats: {str(e)}"
+        )]
+
+
+async def main():
+    """Main entry point for the MCP server."""
+    logger.info("Starting Personal Memory MCP Server...")
+    
+    # Run the server
+    async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
+        await app.run(
+            read_stream,
+            write_stream,
+            app.create_initialization_options()
+        )
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
