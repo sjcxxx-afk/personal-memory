@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  personal-memory:
+    build: .
+    container_name: personal-memory-service
+    restart: unless-stopped
+    
+    # Environment variables
+    environment:
+      - LOG_LEVEL=INFO
+      - PYTHONPATH=/app
+    
+    # Volume mounts for data persistence
+    volumes:
+      # Mount data directories for persistence
+      - ./data:/app/data
+      # Optional: mount config directory
+      - ./config:/app/config
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    
+    # Resource limits (optional)
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Optional: define networks
+# networks:
+#   default:
+#     name: personal-memory-network
