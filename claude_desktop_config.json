@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "personal-memory": {
+      "command": "python",
+      "args": ["run_server.py"],
+      "env": {
+        "PYTHONPATH": "D:\\个人项目\\个人知识库\\personal-memory"
+      }
+    }
+  }
+}
