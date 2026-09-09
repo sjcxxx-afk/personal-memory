@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "personal-memory": {
+      "command": "docker",
+      "args": ["exec", "-i", "personal-memory-service", "python", "-m", "src.server"],
+      "env": {}
+    }
+  }
+}
